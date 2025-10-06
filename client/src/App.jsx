@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { signImage, verifyImage } from './api'
 
 function useFileState() {
@@ -31,6 +31,12 @@ export default function App() {
     () => !busy && (signed.dataUrl || src.dataUrl),
     [busy, signed.dataUrl, src.dataUrl]
   )
+
+  useEffect(() => {
+    setSigned({ name: '', dataUrl: '' })
+    setVerifyRes(null)
+    setStatus('')
+  }, [src.file])
 
   const onSign = async () => {
     if (!src.dataUrl) return
