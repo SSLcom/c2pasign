@@ -26,7 +26,11 @@ export default function App() {
   const [verifyRes, setVerifyRes] = useState(null)
   const [signed, setSigned] = useState({ name: '', dataUrl: '' })
 
-  const canAct = useMemo(() => !!src.dataUrl && !busy, [src.dataUrl, busy])
+  const canSign = useMemo(() => !!src.dataUrl && !busy, [src.dataUrl, busy])
+  const canVerify = useMemo(
+    () => !busy && (signed.dataUrl || src.dataUrl),
+    [busy, signed.dataUrl, src.dataUrl]
+  )
 
   const onSign = async () => {
     if (!src.dataUrl) return
@@ -45,12 +49,15 @@ export default function App() {
   }
 
   const onVerify = async () => {
-    if (!src.dataUrl) return
+    const verifyTarget = signed.dataUrl
+      ? { name: signed.name || src.name, dataUrl: signed.dataUrl }
+      : { name: src.name, dataUrl: src.dataUrl }
+    if (!verifyTarget.dataUrl) return
     setBusy(true)
     setStatus('Verifying...')
     setVerifyRes(null)
     try {
-      const res = await verifyImage({ name: src.name, dataUrl: src.dataUrl })
+      const res = await verifyImage(verifyTarget)
       setVerifyRes(res)
       setStatus(res.ok ? 'Verification PASS' : 'Verification FAIL')
     } catch (e) {
@@ -92,8 +99,8 @@ export default function App() {
           <div className="panel">
             <label><strong>2) Actions</strong></label>
             <div className="actions">
-              <button onClick={onSign} disabled={!canAct}>Sign</button>
-              <button onClick={onVerify} disabled={!canAct}>Verify</button>
+              <button onClick={onSign} disabled={!canSign}>Sign</button>
+              <button onClick={onVerify} disabled={!canVerify}>Verify</button>
             </div>
             <div className="status">{busy ? 'Working...' : status}</div>
             {verifyRes && (
