@@ -7,16 +7,26 @@ PORT="${PORT_FROM_ARG:-${PORT_ENV:-8090}}"
 CLIENT_URL="http://localhost:${PORT}"
 IMAGE_NAME="c2pa-demo"
 
+SKIP_DOCKER="${SKIP_DOCKER:-0}"
+
 echo "==> Checking prerequisites"
-command -v docker >/dev/null 2>&1 || { echo "Docker is required but not found in PATH"; exit 1; }
+if [[ "${SKIP_DOCKER}" == "1" ]]; then
+  echo "Skipping Docker prerequisite check (SKIP_DOCKER=1)"
+else
+  command -v docker >/dev/null 2>&1 || { echo "Docker is required but not found in PATH"; exit 1; }
+fi
 command -v node >/dev/null 2>&1 || { echo "Node.js is required but not found in PATH"; exit 1; }
 
-echo "==> Ensuring Docker image ${IMAGE_NAME} exists"
-if ! docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
-  echo "Building ${IMAGE_NAME}..."
-  docker build -t "${IMAGE_NAME}" .
+if [[ "${SKIP_DOCKER}" == "1" ]]; then
+  echo "==> Skipping Docker image build (SKIP_DOCKER=1)"
 else
-  echo "Docker image ${IMAGE_NAME} already present"
+  echo "==> Ensuring Docker image ${IMAGE_NAME} exists"
+  if ! docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
+    echo "Building ${IMAGE_NAME}..."
+    docker build -t "${IMAGE_NAME}" .
+  else
+    echo "Docker image ${IMAGE_NAME} already present"
+  fi
 fi
 
 echo "==> Building client"

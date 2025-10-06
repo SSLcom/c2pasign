@@ -1,6 +1,6 @@
 FROM rustlang/rust:nightly-slim
 
-RUN apt-get update && apt-get install -y git pkg-config libssl-dev curl make && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git pkg-config libssl-dev curl make nodejs npm && rm -rf /var/lib/apt/lists/*
 
 # Clone the C2PA repository and build c2patool
 RUN git clone https://github.com/contentauth/c2pa-rs.git /c2pa-rs
