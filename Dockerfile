@@ -11,3 +11,4 @@ RUN cargo build --release && cp target/release/c2patool /usr/local/bin/c2patool
 WORKDIR /app
 
 # Note: keys, certs, trust bundle, and manifest are mounted from host at runtime via -v.
+CMD ["bash", "-lc", "cd /app && bash run.sh"]
