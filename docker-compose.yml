@@ -1,13 +1,10 @@
-version: '3.8'
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    command: bash -lc "cd /app && bash run.sh 80"
+    command: bash -lc "./run.sh 80"
     working_dir: /app
-    volumes:
-      - ./:/app
     ports:
       - "8090:8090"
     environment:
