@@ -1,0 +1,12 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: bash -lc "./run.sh"
+    working_dir: /app
+    ports:
+      - "8090:8090"
+    environment:
+      - PORT=8090
+      - SKIP_DOCKER=1
