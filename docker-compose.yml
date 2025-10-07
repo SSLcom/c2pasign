@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_REPO_URL: ${APP_REPO_URL:-https://github.com/contentauth/c2pasign.git}
     command: bash -lc "./run.sh 80"
     working_dir: /app
     ports:
