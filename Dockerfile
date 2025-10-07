@@ -10,8 +10,7 @@ RUN cargo build --release && cp target/release/c2patool /usr/local/bin/c2patool
 # Minimal runtime workspace used when mounting the project directory.
 WORKDIR /app
 
-COPY . /app
-
 RUN chmod +x run.sh
 
 # Note: keys, certs, trust bundle, and manifest can be mounted from the host at runtime if needed.
+

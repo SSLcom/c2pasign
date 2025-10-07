@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: bash -lc "./run.sh"
+    command: bash -lc "./run.sh 80"
     working_dir: /app
     ports:
       - "8090:8090"
