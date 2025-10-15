@@ -1,6 +1,12 @@
 import { promises as fs } from 'fs';
 import { NextResponse } from 'next/server';
-import { dataUrlToBuffer, getTrustBundlePath, runC2pa, writeTempInput } from '@/lib/c2pa';
+import {
+  dataUrlToBuffer,
+  getTrustBundlePath,
+  normaliseSpawnError,
+  runC2pa,
+  writeTempInput,
+} from '@/lib/c2pa';
 
 export const runtime = 'nodejs';
 
@@ -34,7 +40,7 @@ export async function POST(request: Request) {
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected error';
+    const message = normaliseSpawnError(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

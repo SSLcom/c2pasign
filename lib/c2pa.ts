@@ -13,14 +13,19 @@ function randomFileName(prefix: string, extension: string) {
   return `${prefix}-${id}.${extension.replace(/^\./, '')}`;
 }
 
+function describeSources(sources: Array<string | undefined>) {
+  return sources.filter(Boolean).join(' or ');
+}
+
 async function resolveFileFromEnv(options: {
   pathEnv?: string;
   rawEnv?: string;
   base64Env?: string;
   fallbackRelative?: string;
   extension: string;
+  resourceLabel: string;
 }) {
-  const { pathEnv, rawEnv, base64Env, fallbackRelative, extension } = options;
+  const { pathEnv, rawEnv, base64Env, fallbackRelative, extension, resourceLabel } = options;
   const cacheKey = `__cached_${pathEnv || rawEnv || base64Env || fallbackRelative}`;
   const globalAny = globalThis as Record<string, string | undefined>;
   if (cacheKey && globalAny[cacheKey]) {
@@ -60,7 +65,13 @@ async function resolveFileFromEnv(options: {
     }
   }
 
-  throw new Error('Unable to resolve required file from environment');
+  const sources = describeSources([
+    pathEnv && `${pathEnv} (path)`,
+    rawEnv && `${rawEnv} (inline)`,
+    base64Env && `${base64Env} (base64)`,
+    fallbackRelative && `${fallbackRelative} on disk`,
+  ]);
+  throw new Error(`Unable to resolve ${resourceLabel}. Provide ${sources}.`);
 }
 
 export async function getManifestPath() {
@@ -70,6 +81,7 @@ export async function getManifestPath() {
     base64Env: 'C2PA_MANIFEST_BASE64',
     fallbackRelative: 'manifest.json',
     extension: 'json',
+    resourceLabel: 'C2PA manifest',
   });
 }
 
@@ -80,6 +92,7 @@ export async function getTrustBundlePath() {
     base64Env: 'C2PA_TRUST_BUNDLE_BASE64',
     fallbackRelative: 'C2PA-TRUST-BUNDLE.pem',
     extension: 'pem',
+    resourceLabel: 'trust bundle',
   });
 }
 
@@ -114,8 +127,12 @@ export async function runC2pa(args: string[]) {
   });
 }
 
-export async function withTempFile<T>(extension: string, fn: (filePath: string) => Promise<T>) {
-  const filePath = path.join(tmpdir(), randomFileName('c2pa-tmp', extension));
+export async function withTempFile<T>(
+  extension: string,
+  fn: (filePath: string) => Promise<T>,
+  prefix = 'c2pa-tmp',
+) {
+  const filePath = path.join(tmpdir(), randomFileName(prefix, extension));
   try {
     return await fn(filePath);
   } finally {
@@ -139,4 +156,27 @@ export async function readFileAsDataUrl(filePath: string, fallbackName: string) 
   const ext = path.extname(fallbackName).toLowerCase();
   const mime = ext.includes('png') ? 'image/png' : 'image/jpeg';
   return `data:${mime};base64,${buffer.toString('base64')}`;
+}
+
+export function normaliseSpawnError(error: unknown) {
+  const err = error as NodeJS.ErrnoException | undefined;
+  if (err?.code === 'ENOENT') {
+    return 'c2patool not found. Install the binary or set C2PA_TOOL_PATH.';
+  }
+  return error instanceof Error ? error.message : 'Unexpected error';
+}
+
+export function buildSignedFileName(originalName: string | undefined) {
+  const fallback = 'image';
+  const ext = path.extname(originalName ?? '');
+  const extension = ext ? ext.replace('.', '').toLowerCase() : 'jpg';
+  const base = ext && originalName ? originalName.slice(0, -ext.length) : originalName ?? fallback;
+  const safeBase = base
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-')
+    .trim();
+  const finalBase = safeBase || fallback;
+  return `signed-${finalBase}.${extension}`;
 }

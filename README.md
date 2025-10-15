@@ -93,7 +93,8 @@ Use a process manager such as `pm2` or systemd for long-running services. Config
 
 The new API shape mirrors the previous Node server:
 
-- `POST /api/sign` – body `{ imageName, imageData }` (data URL or raw base64). Returns `{ ok, fileName, dataUrl }`.
+- `GET /api/health` – lightweight health check used by platform probes.
+- `POST /api/sign` – body `{ imageName, imageData }` (data URL or raw base64). Returns `{ ok, fileName, dataUrl }`, where `fileName` mirrors the uploaded extension (for easier downloads) and `dataUrl` is the signed asset.
 - `POST /api/verify` – body `{ imageName, imageData }`. Returns `{ ok, output, error }`.
 
 Responses include trimmed stdout/stderr from `c2patool` to aid debugging. Errors include useful messages to help diagnose missing binaries or trust material.

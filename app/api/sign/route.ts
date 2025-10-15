@@ -1,9 +1,11 @@
 import path from 'path';
 import { NextResponse } from 'next/server';
 import {
+  buildSignedFileName,
   dataUrlToBuffer,
   getManifestPath,
   getTrustBundlePath,
+  normaliseSpawnError,
   readFileAsDataUrl,
   runC2pa,
   withTempFile,
@@ -29,10 +31,13 @@ export async function POST(request: Request) {
     const manifestPath = await getManifestPath();
     const trustBundlePath = await getTrustBundlePath();
 
-    const inputPath = await writeTempInput(buffer, body.imageName);
+    const originalName = body.imageName?.trim();
+    const defaultName = originalName && originalName.length > 0 ? originalName : 'image.jpg';
+    const signedFileName = buildSignedFileName(defaultName);
+    const extension = path.extname(defaultName).replace('.', '') || 'jpg';
+
+    const inputPath = await writeTempInput(buffer, defaultName);
     try {
-      const defaultName = body.imageName || 'image.jpg';
-      const extension = path.extname(defaultName).replace('.', '') || 'jpg';
       return await withTempFile(extension, async (outputPath) => {
         const args = [
           inputPath,
@@ -50,9 +55,9 @@ export async function POST(request: Request) {
           const message = result.stderr || result.stdout || 'Signing failed';
           return NextResponse.json({ ok: false, error: message }, { status: 500 });
         }
-        const dataUrl = await readFileAsDataUrl(outputPath, defaultName);
-        return NextResponse.json({ ok: true, fileName: path.basename(outputPath), dataUrl });
-      });
+        const dataUrl = await readFileAsDataUrl(outputPath, signedFileName);
+        return NextResponse.json({ ok: true, fileName: signedFileName, dataUrl });
+      }, 'signed');
     } finally {
       try {
         await fs.unlink(inputPath);
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected error';
+    const message = normaliseSpawnError(error);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
