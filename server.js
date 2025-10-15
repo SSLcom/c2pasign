@@ -6,6 +6,7 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 
 const PORT = process.env.PORT || 8080;
 const DOCKER_IMAGE = process.env.C2PA_DOCKER_IMAGE || 'c2pa-demo';
@@ -48,6 +49,15 @@ function parseBody(req) {
   });
 }
 
+function collectBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function ensureDockerImage() {
   const inspect = spawnSync('docker', ['image', 'inspect', DOCKER_IMAGE], { encoding: 'utf8' });
   if (inspect.status === 0) return;
@@ -75,14 +85,15 @@ function dataUrlToBuffer(dataUrl) {
   }
 }
 
-function runC2paSign(inputPath, outputPath) {
+function runC2paSign(inputPath, outputPath, manifestPath) {
   // Mirrors c2pa_sign_tamper_verify.sh signing invocation
   const inRel = path.relative(WORKDIR, inputPath);
   const outRel = path.relative(WORKDIR, outputPath);
+  const manifestRel = path.relative(WORKDIR, manifestPath || MANIFEST);
   const cmd = [
     'run', '--rm', '-v', `${WORKDIR}:/app`, '-w', '/app', DOCKER_IMAGE,
     'sh', '-c',
-    `c2patool "${inRel}" -m "${MANIFEST}" -o "${outRel}" -f trust --trust_anchors "${TRUST_BUNDLE}"`
+    `c2patool "${inRel}" -m "${manifestRel}" -o "${outRel}" -f trust --trust_anchors "${TRUST_BUNDLE}"`
   ];
   const child = spawnSync('docker', cmd, { encoding: 'utf8' });
   return child;
@@ -126,16 +137,16 @@ function hasLocalC2pa() {
   return probe.status === 0;
 }
 
-function execSign(inputPath, outputPath) {
+function execSign(inputPath, outputPath, manifestPath) {
   if (MODE === 'local' || hasLocalC2pa()) {
     return spawnSync('c2patool', [
       inputPath,
-      '-m', MANIFEST,
+      '-m', manifestPath || MANIFEST,
       '-o', outputPath,
       '-f', 'trust', '--trust_anchors', TRUST_BUNDLE
     ], { encoding: 'utf8' });
   }
-  return runC2paSign(inputPath, outputPath);
+  return runC2paSign(inputPath, outputPath, manifestPath);
 }
 
 function execVerify(inputPath) {
@@ -146,6 +157,80 @@ function execVerify(inputPath) {
     ], { encoding: 'utf8' });
   }
   return runC2paVerify(inputPath);
+}
+
+function ensureManifestPayload(manifest, timestampUrl) {
+  let base = {};
+  try {
+    const fileText = fs.readFileSync(MANIFEST, 'utf8');
+    base = JSON.parse(fileText);
+  } catch {}
+  const merged = {
+    ...base,
+    ...(manifest && typeof manifest === 'object' ? manifest : {}),
+  };
+  if (timestampUrl) {
+    merged.ta_url = timestampUrl;
+  } else if (!merged.ta_url) {
+    delete merged.ta_url;
+  }
+  merged.private_key = merged.private_key || base.private_key || 'mykey.key';
+  merged.sign_cert = merged.sign_cert || base.sign_cert || 'mycert.pem';
+  merged.sign_cert_chain = merged.sign_cert_chain || base.sign_cert_chain || ['C2PA-TRUST-BUNDLE.pem'];
+  merged.alg = merged.alg || base.alg || 'ps256';
+  return merged;
+}
+
+function extractJsonFromOutput(text) {
+  if (!text || typeof text !== 'string') return null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+async function proxyTsa(req, res) {
+  try {
+    const rawBody = await collectBody(req);
+    const pathSuffix = req.url.replace(/^\/api\/tsa\//, '').replace(/\.{2,}/g, '');
+    const targetUrl = `https://api.staging.c2pa.ssl.com/v1/timestamp/${pathSuffix || 'rsa'}`;
+    const urlObj = new URL(targetUrl);
+    const options = {
+      method: req.method || 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname + urlObj.search,
+      headers: {
+        'Content-Type': req.headers['content-type'] || 'application/json',
+      },
+    };
+
+    const proxyReq = https.request(options, (proxyRes) => {
+      const chunks = [];
+      proxyRes.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      proxyRes.on('end', () => {
+        const body = Buffer.concat(chunks);
+        res.writeHead(proxyRes.statusCode || 502, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(body);
+      });
+    });
+    proxyReq.on('error', (err) => {
+      json(res, 502, { ok: false, error: `TSA proxy error: ${err.message}` });
+    });
+    if (rawBody?.length) {
+      proxyReq.write(rawBody);
+    }
+    proxyReq.end();
+  } catch (err) {
+    json(res, 500, { ok: false, error: err.message || String(err) });
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -164,12 +249,16 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, message: 'c2pa demo server' });
   }
 
+  if (req.method === 'POST' && req.url.startsWith('/api/tsa/')) {
+    return proxyTsa(req, res);
+  }
+
   if (req.method === 'POST' && req.url === '/api/sign') {
     try {
       ensureUploadsDir();
       if (!(MODE === 'local' || hasLocalC2pa())) ensureDockerImage();
       const body = await parseBody(req);
-      const { imageName, imageData } = body || {};
+      const { imageName, imageData, manifest: manifestOverride, timestampUrl } = body || {};
       const buf = dataUrlToBuffer(imageData);
       if (!buf) return json(res, 400, { ok: false, error: 'Invalid image data' });
       const ext = (imageName && path.extname(imageName)) || 'jpg';
@@ -178,16 +267,26 @@ const server = http.createServer(async (req, res) => {
       const inPath = path.join(UPLOAD_DIR, inputName);
       const outPath = path.join(WORKDIR, outputName); // output in root so Docker can write
       fs.writeFileSync(inPath, buf);
-      const result = execSign(inPath, outPath);
+      const manifestPayload = ensureManifestPayload(manifestOverride, timestampUrl);
+      const manifestTemp = path.join(UPLOAD_DIR, randName('manifest', 'json'));
+      fs.writeFileSync(manifestTemp, JSON.stringify(manifestPayload, null, 2));
+      const result = execSign(inPath, outPath, manifestTemp);
       if (result.status !== 0) {
+        try { fs.unlinkSync(manifestTemp); } catch {}
         return json(res, 500, { ok: false, error: result.stderr || result.stdout || 'Signing failed' });
       }
       const signedBuf = fs.readFileSync(outPath);
       // Clean up input, keep output for debugging
       try { fs.unlinkSync(inPath); } catch {}
+      try { fs.unlinkSync(manifestTemp); } catch {}
       const b64 = signedBuf.toString('base64');
       const mime = 'image/' + ((ext || '').toLowerCase().includes('png') ? 'png' : 'jpeg');
-      return json(res, 200, { ok: true, fileName: outputName, dataUrl: `data:${mime};base64,${b64}` });
+      return json(res, 200, {
+        ok: true,
+        fileName: outputName,
+        dataUrl: `data:${mime};base64,${b64}`,
+        manifest: manifestPayload,
+      });
     } catch (e) {
       return json(res, 500, { ok: false, error: String(e.message || e) });
     }
@@ -211,7 +310,8 @@ const server = http.createServer(async (req, res) => {
       const ok = result.status === 0;
       const output = (result.stdout || '').trim();
       const error = (result.stderr || '').trim();
-      return json(res, 200, { ok, output, error });
+      const report = extractJsonFromOutput(output) || extractJsonFromOutput(error);
+      return json(res, 200, { ok, output, error, report });
     } catch (e) {
       return json(res, 500, { ok: false, error: String(e.message || e) });
     }
