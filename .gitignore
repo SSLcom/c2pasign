@@ -1,7 +1,10 @@
 # Node / JS
 node_modules/
-client/node_modules/
-client/dist/
+.next/
+out/
+
+# Legacy client artifacts
+client/
 
 # OS / editor
 .DS_Store
@@ -24,5 +27,5 @@ uploads/
 mykey.key
 mycert.pem
 
-# Git
+# Environment
 .env
