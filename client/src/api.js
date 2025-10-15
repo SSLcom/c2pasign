@@ -39,6 +39,27 @@ export async function verifyImage({ name, dataUrl }) {
   })
 }
 
-export async function proxyTimestamp(path, payload) {
-  return requestJson(`/api/tsa/${path}`, payload)
+export async function requestCertificate({ csrPem }) {
+  const res = await fetch(`${API_BASE}/api/cert-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csr: csrPem })
+  })
+  const text = await res.text()
+  try {
+    const json = text ? JSON.parse(text) : {}
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: json?.error || json?.message || `HTTP ${res.status}`
+      }
+    }
+    return json
+  } catch (e) {
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}` }
+    }
+    return { ok: false, error: `Unexpected response: ${text || e.message}` }
+  }
 }
+
