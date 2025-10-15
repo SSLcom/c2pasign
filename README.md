@@ -1,108 +1,107 @@
-## C2PA Demo: Sign & Verify (PoC)
+# C2PA Demo: Sign & Verify (Next.js)
 
-This repo includes a minimal Node server and a simple React UI to sign and verify images using `c2patool` inside Docker. It uses the existing `Dockerfile`, `manifest.json`, and trust bundle in this folder.
+This project is now a [Next.js](https://nextjs.org/) App Router application that exposes UI and API routes for signing and verifying images with [`c2patool`](https://github.com/contentauth/c2pa/tree/main/tools/cli). The legacy bespoke Node/Docker stack has been retired in favour of built-in API routes and environment-driven configuration that works well on DigitalOcean App Platform or a standard Node host.
 
-Important: Do not commit private keys. A sample manifest is provided as `manifest.sample.json`; copy it to `manifest.json` and place your own key/cert locally.
+> **Security note**: Never commit private keys. Sample manifests and trust bundles are provided only for local testing.
 
-### Prerequisites
+## Project layout
 
-- Docker Desktop running
+- `app/` – App Router routes, including `/api/sign` and `/api/verify`.
+- `components/` – Reusable UI components built with Tailwind CSS + shadcn/ui primitives.
+- `lib/` – Shared utilities for calling `c2patool` and working with manifests.
+- `public/` – Static assets served by Next.js.
+
+## Prerequisites
+
 - Node.js 18+
+- `c2patool` binary available on the server PATH (or configure `C2PA_TOOL_PATH`).
 
-### One‑liner run
+## Getting started locally
 
-```
-bash run.sh
-```
-
-By default it uses port `8090`. To use a specific port:
-
-```
-PORT=3007 bash run.sh
-# or
-bash run.sh 3007
-```
-
-This builds the Docker image if needed, builds the React client, starts the server, and opens `http://localhost:<PORT>`.
-
-Server exposes:
-- `POST /api/sign` → body: `{ imageName, imageData }` where `imageData` is a data URL or base64 string; returns `{ ok, fileName, dataUrl }`.
-- `POST /api/verify` → body: `{ imageName, imageData }`; returns `{ ok, output, error }`.
-
-### Run the server (manual)
-
-```
-PORT=8090 node server.js
-```
-
-On first sign/verify, it builds the `c2pa-demo` Docker image defined in `Dockerfile` and uses `C2PA-TRUST-BUNDLE.pem` and `manifest.json` to sign and validate.
-
-Setup before running:
-- Copy `manifest.sample.json` to `manifest.json` and adjust paths as needed.
-- Place your test private key and signing cert alongside `manifest.json` (default names: `mykey.key`, `mycert.pem`).
-- Ensure `C2PA-TRUST-BUNDLE.pem` contains the issuing CA chain for your signing cert.
-
-### Dev mode client (optional)
-
-In `client/` for hot-reload dev:
-
-```
+```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The dev server proxies `/api/*` to `http://localhost:8080` by default; adjust `client/vite.config.js` if you run the server on another port.
+Open <http://localhost:3000>. The UI allows you to pick an image, sign it, and verify the resulting attestations directly from the browser via the built-in API routes.
 
-### Package for others (single Docker image)
+To create a production build and run it:
 
-Build a self-contained image that includes c2patool, the server, and the built UI:
-
-```
-docker build -f Dockerfile.web -t c2pa-web .
-docker run --rm -p 8090:8080 \
-  -v "$(pwd)/mykey.key:/app/mykey.key:ro" \
-  -v "$(pwd)/mycert.pem:/app/mycert.pem:ro" \
-  -v "$(pwd)/C2PA-TRUST-BUNDLE.pem:/app/C2PA-TRUST-BUNDLE.pem:ro" \
-  c2pa-web
-```
-
-Then open `http://localhost:8090`. This image runs `c2patool` inside the container (no Docker-in-Docker required), and serves the UI from the same port. Keys/certs are mounted at runtime; they are not baked into the image.
-
-You can publish the image to a registry (e.g., Docker Hub or GHCR) to share with others, and they only need Docker to run it.
-
-Security note: Do not ship private keys in images or commits. For production, use a signing service, KMS/HSM, or inject keys at runtime via secrets/volumes.
-
-### Alternative distribution
-
-- Share the repo as-is; users run `bash run.sh` (requires Docker + Node).
-- Or build the client and serve statically behind any host, while running `server.js` on a Node host with Docker available.
-
-### Configuration
-
-- `PORT`: server port (default 8090 when using `run.sh`; 8080 inside the all-in-one Docker image).
-- `C2PA_MODE`: set to `local` to force using a locally available `c2patool` binary (used by the all-in-one image). Defaults to Docker mode if not set and `c2patool` not found.
-- `C2PA_DOCKER_IMAGE`: override the Docker image name used when in Docker mode (defaults to `c2pa-demo`).
-- `MANIFEST_PATH`: path to `manifest.json` (default: `manifest.json`).
-- `TRUST_BUNDLE_PATH`: path to trust bundle PEM (default: `C2PA-TRUST-BUNDLE.pem`).
-
-
-### Build client for production
-
-```
-cd client
+```bash
 npm run build
+npm run start
 ```
 
-The static files are in `client/dist`. Serve them with any static server and ensure the API server is reachable at `http://localhost:8080` or adjust the proxy/base.
+## Configuring signing materials
 
-### Notes
+The API routes resolve signing artefacts from environment variables or fallback files in the repository. Provide **one** of the following for each artefact:
 
-- The signing command mirrors `c2pa_sign_tamper_verify.sh`.
-- Output files are written to repo root by Docker; the API returns a data URL for immediate download.
-- Verification returns a PASS/FAIL plus the first lines of tool output.
+| Artefact | Environment variables | Fallback file |
+| --- | --- | --- |
+| C2PA manifest | `C2PA_MANIFEST_PATH`, `C2PA_MANIFEST_JSON`, or `C2PA_MANIFEST_BASE64` | `manifest.json` |
+| Trust bundle PEM | `C2PA_TRUST_BUNDLE_PATH`, `C2PA_TRUST_BUNDLE_PEM`, or `C2PA_TRUST_BUNDLE_BASE64` | `C2PA-TRUST-BUNDLE.pem` |
+| c2patool binary | `C2PA_TOOL_PATH` | `c2patool` on `PATH` |
 
-### Using real certificates
+- `*_PATH` should point to a readable file on disk.
+- `*_JSON` / `*_PEM` may contain the full document contents.
+- `*_BASE64` may contain the base64 encoding of the document (useful for platforms that only allow secret environment variables).
 
-- Replace the test key/cert with your real signing materials. Keep private keys out of Git.
-- Update `manifest.json` to point to the correct file paths. If running the all‑in‑one image, mount files into `/app` as shown above.
-- Set a production timestamping URL if needed (`ta_url`).
+Example of encoding a PEM trust bundle for an environment variable:
+
+```bash
+base64 -w0 C2PA-TRUST-BUNDLE.pem
+```
+
+Set the resulting string as the value of `C2PA_TRUST_BUNDLE_BASE64`. Similar approaches work for the manifest.
+
+A sample manifest is provided as `manifest.sample.json`; copy it to `manifest.json` for local experiments and update the key/cert paths accordingly. **Do not** commit private keys.
+
+## Deployment on DigitalOcean
+
+### App Platform
+
+1. Create a new App on DigitalOcean and connect this repository.
+2. Use the “Next.js” build pack or configure a Node service with:
+   - Build command: `npm install && npm run build`
+   - Run command: `npm run start`
+3. Add environment variables (marked as “secret” where appropriate):
+   - `C2PA_TRUST_BUNDLE_BASE64` – base64 encoded PEM trust chain.
+   - `C2PA_MANIFEST_BASE64` – base64 encoded manifest JSON (or use `C2PA_MANIFEST_JSON`).
+   - Optional: `C2PA_TOOL_PATH` if `c2patool` lives outside the default PATH.
+4. Add a build-time `npm install -g @contentauth/c2pa` step or bundle your own binary (App Platform supports post-build commands). Alternatively, bake the binary into the repo using a custom step.
+5. Deploy. App Platform will run `next start`, exposing both the UI and the API routes on the same service.
+
+### Droplet (Ubuntu example)
+
+```bash
+# install dependencies
+sudo apt-get update
+apt-get install -y nodejs npm
+npm install -g @contentauth/c2pa
+
+# deploy app
+git clone <repo>
+cd c2pasign
+npm install
+C2PA_TRUST_BUNDLE_BASE64=... C2PA_MANIFEST_BASE64=... npm run build
+C2PA_TRUST_BUNDLE_BASE64=... C2PA_MANIFEST_BASE64=... npm run start
+```
+
+Use a process manager such as `pm2` or systemd for long-running services. Configure environment variables in the manager, not in source control.
+
+## API contract
+
+The new API shape mirrors the previous Node server:
+
+- `POST /api/sign` – body `{ imageName, imageData }` (data URL or raw base64). Returns `{ ok, fileName, dataUrl }`.
+- `POST /api/verify` – body `{ imageName, imageData }`. Returns `{ ok, output, error }`.
+
+Responses include trimmed stdout/stderr from `c2patool` to aid debugging. Errors include useful messages to help diagnose missing binaries or trust material.
+
+## Styling
+
+Tailwind CSS and shadcn/ui provide the component baseline. Customize themes by editing `app/globals.css` and `tailwind.config.ts`. The default design mirrors the dark, card-driven look of the original prototype while offering responsive layout improvements.
+
+## Legacy scripts
+
+The legacy Docker helper scripts (`run.sh`, `Dockerfile`, etc.) have been removed. If you need a single-container deployment, consider building a lightweight Node image that runs `npm run start` after installing `c2patool` and supplying secrets via environment variables.

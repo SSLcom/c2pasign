@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 213 22% 8%;
+  --foreground: 218 21% 92%;
+  --card: 220 21% 10%;
+  --card-foreground: 218 21% 92%;
+  --popover: 220 21% 10%;
+  --popover-foreground: 218 21% 92%;
+  --primary: 214 72% 53%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 215 16% 22%;
+  --secondary-foreground: 218 21% 92%;
+  --muted: 215 16% 22%;
+  --muted-foreground: 215 20% 72%;
+  --accent: 215 16% 22%;
+  --accent-foreground: 218 21% 92%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 215 16% 22%;
+  --input: 215 16% 22%;
+  --ring: 214 72% 53%;
+  --radius: 0.75rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 50%),
+    rgba(7, 11, 18, 1);
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+input[type='file']::-webkit-file-upload-button {
+  cursor: pointer;
+}
