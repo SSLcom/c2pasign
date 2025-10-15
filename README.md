@@ -6,7 +6,7 @@ This project is now a [Next.js](https://nextjs.org/) App Router application that
 
 ## Project layout
 
-- `app/` – App Router routes, including `/api/sign` and `/api/verify`.
+- `app/` – App Router routes, including `/api/sign`, `/api/verify`, and `/api/health`.
 - `components/` – Reusable UI components built with Tailwind CSS + shadcn/ui primitives.
 - `lib/` – Shared utilities for calling `c2patool` and working with manifests.
 - `public/` – Static assets served by Next.js.
@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. The UI allows you to pick an image, sign it, and verify the resulting attestations directly from the browser via the built-in API routes.
+Open <http://localhost:3000>. The UI allows you to pick an image, sign it, and verify the resulting attestations directly from the browser via the built-in API routes. Toggle whether verification targets the freshly signed image or the original upload, and copy raw `c2patool` logs from the diagnostics panel to aid debugging.
 
 To create a production build and run it:
 
@@ -41,6 +41,7 @@ The API routes resolve signing artefacts from environment variables or fallback 
 | C2PA manifest | `C2PA_MANIFEST_PATH`, `C2PA_MANIFEST_JSON`, or `C2PA_MANIFEST_BASE64` | `manifest.json` |
 | Trust bundle PEM | `C2PA_TRUST_BUNDLE_PATH`, `C2PA_TRUST_BUNDLE_PEM`, or `C2PA_TRUST_BUNDLE_BASE64` | `C2PA-TRUST-BUNDLE.pem` |
 | c2patool binary | `C2PA_TOOL_PATH` | `c2patool` on `PATH` |
+| Optional API base override | `NEXT_PUBLIC_API_BASE_URL` | *(none)* |
 
 - `*_PATH` should point to a readable file on disk.
 - `*_JSON` / `*_PEM` may contain the full document contents.
@@ -69,7 +70,7 @@ A sample manifest is provided as `manifest.sample.json`; copy it to `manifest.js
    - `C2PA_MANIFEST_BASE64` – base64 encoded manifest JSON (or use `C2PA_MANIFEST_JSON`).
    - Optional: `C2PA_TOOL_PATH` if `c2patool` lives outside the default PATH.
 4. Add a build-time `npm install -g @contentauth/c2pa` step or bundle your own binary (App Platform supports post-build commands). Alternatively, bake the binary into the repo using a custom step.
-5. Deploy. App Platform will run `next start`, exposing both the UI and the API routes on the same service.
+5. Deploy. App Platform will run `next start`, exposing both the UI and the API routes on the same service. If your API lives on a different host (for example, when front-end assets are served from a CDN), set `NEXT_PUBLIC_API_BASE_URL` so the browser calls the correct origin.
 
 ### Droplet (Ubuntu example)
 

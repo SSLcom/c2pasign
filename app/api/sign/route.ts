@@ -53,10 +53,19 @@ export async function POST(request: Request) {
         const result = await runC2pa(args);
         if (result.code !== 0) {
           const message = result.stderr || result.stdout || 'Signing failed';
-          return NextResponse.json({ ok: false, error: message }, { status: 500 });
+          return NextResponse.json(
+            { ok: false, error: message, stdout: result.stdout, stderr: result.stderr },
+            { status: 500 },
+          );
         }
         const dataUrl = await readFileAsDataUrl(outputPath, signedFileName);
-        return NextResponse.json({ ok: true, fileName: signedFileName, dataUrl });
+        return NextResponse.json({
+          ok: true,
+          fileName: signedFileName,
+          dataUrl,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        });
       }, 'signed');
     } finally {
       try {

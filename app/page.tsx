@@ -28,18 +28,37 @@ export default function Home() {
   const [status, setStatus] = useState('');
   const [signed, setSigned] = useState<Pick<SignResponse, 'fileName' | 'dataUrl'>>({});
   const [verifyResult, setVerifyResult] = useState<VerifyResponse | null>(null);
+  const [signLog, setSignLog] = useState('');
+  const [verifyLog, setVerifyLog] = useState('');
+  const [verifySource, setVerifySource] = useState<'original' | 'signed'>('signed');
+
+  const copyToClipboard = (value: string) => {
+    if (!value) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(value);
+      }
+    } catch (error) {
+      console.error('Failed to copy', error);
+    }
+  };
 
   useEffect(() => {
     setStatus('');
     setSigned({});
     setVerifyResult(null);
+    setSignLog('');
+    setVerifyLog('');
   }, [source.file]);
 
   const canSign = useMemo(() => Boolean(source.dataUrl) && !busy, [source.dataUrl, busy]);
-  const canVerify = useMemo(
-    () => !busy && Boolean((signed.dataUrl || source.dataUrl) && (signed.fileName || source.name)),
-    [busy, signed.dataUrl, signed.fileName, source.dataUrl, source.name],
-  );
+  const canVerify = useMemo(() => {
+    if (busy) return false;
+    if (verifySource === 'signed') {
+      return Boolean(signed.dataUrl);
+    }
+    return Boolean(source.dataUrl);
+  }, [busy, signed.dataUrl, source.dataUrl, verifySource]);
 
   const onPick = (file: File | undefined | null) => {
     if (!file) return;
@@ -58,6 +77,7 @@ export default function Home() {
     if (!source.dataUrl || busy) return;
     setBusy(true);
     setStatus('Signing…');
+    setSignLog('');
     try {
       const response = await signImage({ name: source.name, dataUrl: source.dataUrl });
       if (!response.ok || !response.dataUrl) {
@@ -65,29 +85,47 @@ export default function Home() {
       }
       setSigned({ fileName: response.fileName ?? `signed_${source.name}`, dataUrl: response.dataUrl });
       setStatus('Signed successfully. Download or verify the result.');
+      const stdout = response.stdout?.trim() ?? '';
+      const stderr = response.stderr?.trim() ?? '';
+      setSignLog([stdout, stderr].filter(Boolean).join('\n\n'));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error';
       setStatus(`Sign error: ${message}`);
+      if (error instanceof Error) {
+        const stdout = (error as Error & { stdout?: string }).stdout?.trim() ?? '';
+        const stderr = (error as Error & { stderr?: string }).stderr?.trim() ?? '';
+        setSignLog([stdout, stderr].filter(Boolean).join('\n\n') || message);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const onVerify = async () => {
-    const target = signed.dataUrl
+    const useSigned = verifySource === 'signed' && signed.dataUrl;
+    const target = useSigned
       ? { name: signed.fileName ?? source.name, dataUrl: signed.dataUrl }
       : { name: source.name, dataUrl: source.dataUrl };
     if (!target.dataUrl) return;
     setBusy(true);
     setStatus('Verifying…');
     setVerifyResult(null);
+    setVerifyLog('');
     try {
       const result = await verifyImage({ name: target.name ?? source.name, dataUrl: target.dataUrl });
       setVerifyResult(result);
       setStatus(result.ok ? 'Verification PASS' : 'Verification FAIL');
+      const stdout = result.stdout?.trim() ?? '';
+      const stderr = result.stderr?.trim() ?? '';
+      setVerifyLog([stdout, stderr].filter(Boolean).join('\n\n'));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error';
       setStatus(`Verify error: ${message}`);
+      if (error instanceof Error) {
+        const stdout = (error as Error & { stdout?: string }).stdout?.trim() ?? '';
+        const stderr = (error as Error & { stderr?: string }).stderr?.trim() ?? '';
+        setVerifyLog([stdout, stderr].filter(Boolean).join('\n\n') || message);
+      }
     } finally {
       setBusy(false);
     }
@@ -176,6 +214,29 @@ export default function Home() {
                   {busy && status.startsWith('Verifying') ? 'Working…' : 'Verify'}
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Verify against:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={verifySource === 'signed' ? 'default' : 'ghost'}
+                  className="h-7"
+                  onClick={() => setVerifySource('signed')}
+                  disabled={!signed.dataUrl || busy}
+                >
+                  Signed output
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={verifySource === 'original' ? 'default' : 'ghost'}
+                  className="h-7"
+                  onClick={() => setVerifySource('original')}
+                  disabled={!source.dataUrl || busy}
+                >
+                  Original upload
+                </Button>
+              </div>
               <div className="rounded-md bg-muted/40 p-3 text-left text-xs font-mono text-muted-foreground">
                 {busy ? 'Working…' : status || 'Awaiting action.'}
               </div>
@@ -218,6 +279,50 @@ export default function Home() {
                 Download signed image
               </Button>
             </CardFooter>
+          </Card>
+          <Card className="border-primary/20 bg-card/80 backdrop-blur">
+            <CardHeader>
+              <CardTitle>4. Diagnostics</CardTitle>
+              <CardDescription>Inspect raw c2patool output from the most recent operations.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground">
+                  <span>Sign output</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() => copyToClipboard(signLog)}
+                    disabled={!signLog}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <pre className="max-h-48 overflow-auto rounded-md border border-border/40 bg-background/80 p-3 text-xs text-muted-foreground">
+                  {signLog || 'Run a signing operation to view output.'}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground">
+                  <span>Verify output</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() => copyToClipboard(verifyLog)}
+                    disabled={!verifyLog}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <pre className="max-h-48 overflow-auto rounded-md border border-border/40 bg-background/80 p-3 text-xs text-muted-foreground">
+                  {verifyLog || 'Run a verification to view output.'}
+                </pre>
+              </div>
+            </CardContent>
           </Card>
         </div>
       </section>

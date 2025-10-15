@@ -31,6 +31,8 @@ export async function POST(request: Request) {
         ok: result.code === 0,
         output: result.stdout.trim(),
         error: result.stderr.trim(),
+        stdout: result.stdout,
+        stderr: result.stderr,
       });
     } finally {
       try {
